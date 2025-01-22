@@ -4,6 +4,8 @@ from services.warn_manager import warn_manager
 from aiogram.filters import Command
 from aiogram.types import User
 from services.stats_manager import stats_manager
+import logging
+logger = logging.getLogger(__name__)  # Добавьте эту строку
 
 async def ban_user(message: types.Message):
     if message.reply_to_message:
@@ -30,10 +32,11 @@ async def warn_user(message: types.Message):
         warn_manager.remove_warn(user.id, 5)  # Сброс варнов
 
 async def show_stats(message: types.Message):
-    top_users = stats_manager.get_top_users()
+    chat_id = message.chat.id
+    top_users = stats_manager.get_chat_stats(chat_id)
     
     if not top_users:
-        await message.answer("📊 Статистика пока недоступна")
+        await message.answer("📊 Статистика для этого чата пока недоступна")
         return
 
     stats_text = ["🏆 Топ активных пользователей:\n"]

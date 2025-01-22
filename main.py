@@ -10,7 +10,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from config import config
-# from middlewares.antiflood import AntiFloodMiddleware
+from middlewares.antiflood import AntiFloodMiddleware
 from middlewares.stats import StatsMiddleware
 from handlers import admin, common
 from filters.admin import IsAdminFilter
@@ -20,8 +20,8 @@ async def main():
     dp = Dispatcher(storage=MemoryStorage())
     
     # Middleware
-    dp.update.outer_middleware(StatsMiddleware())  # Сначала сбор статистики
-    # dp.update.outer_middleware(AntiFloodMiddleware())  # Затем антифлуд
+    dp.update.outer_middleware(StatsMiddleware())
+    dp.update.outer_middleware(AntiFloodMiddleware())
     
     # Регистрация обработчиков
     dp.message.register(admin.ban_user, Command('ban'), IsAdminFilter())
@@ -38,5 +38,5 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)  # Включите детальное логирование
+    logging.basicConfig(level=logging.DEBUG)
     asyncio.run(main())

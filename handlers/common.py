@@ -1,10 +1,23 @@
 from aiogram import types, Bot
+from aiogram.enums import ContentType
 from config import config
 from services import ai, moderation
+from services.stats_manager import stats_manager
 import logging
 
 async def handle_message(message: types.Message, bot: Bot):
-    # Проверка модерации
+    
+    if (
+        message.chat.type in {"group", "supergroup"} 
+        and message.content_type == ContentType.TEXT
+        and not message.from_user.is_bot
+    ):
+        try:
+            stats_manager.update_user(message.chat.id, message.from_user.id)
+            logging.info(f"Статистика обновлена для {message.from_user.id}")
+        except Exception as e:
+            logging.error(f"Ошибка статистики: {e}")
+    
     if moderation.contains_bad_words(message.text):
         try:
             await message.delete()
