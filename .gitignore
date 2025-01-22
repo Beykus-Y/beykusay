@@ -173,3 +173,4 @@ cython_debug/
 *.md
 stats/
 data/
+stats/stats.jso
