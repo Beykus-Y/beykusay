@@ -170,5 +170,5 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-promt.txt
+system_prompt.txt
 *.md
