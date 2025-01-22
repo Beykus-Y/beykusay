@@ -6,6 +6,7 @@ from aiogram.types import User
 from services.stats_manager import stats_manager
 import logging
 from filters.admin import IsAdminFilter
+from services.prompt_manager import prompt_manager
 
 logger = logging.getLogger(__name__)  # Добавьте эту строку
 
@@ -184,3 +185,18 @@ async def delete_message(message: types.Message):
         await message.delete()
     except Exception as e:
         await message.answer(f"❌ Не удалось удалить сообщение: {str(e)}")
+
+async def set_prompt(message: types.Message):
+    if not message.reply_to_message:
+        await message.answer("❌ Ответьте на сообщение с новым промптом!")
+        return
+    
+    new_prompt = message.reply_to_message.text
+    prompt_manager.set_prompt(message.chat.id, new_prompt)
+    await message.answer("✅ Системный промпт для этого чата обновлен!")
+    reset_chat_context(message.chat.id)  # Сбрасываем контекст для применения нового промпта
+
+async def reset_prompt(message: types.Message):
+    prompt_manager.reset_prompt(message.chat.id)
+    await message.answer("✅ Системный промпт сброшен до стандартного!")
+    reset_chat_context(message.chat.id)

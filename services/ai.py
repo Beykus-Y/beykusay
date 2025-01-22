@@ -5,6 +5,7 @@ from typing import Dict, List
 from config import config
 import os
 from pathlib import Path
+from services.prompt_manager import prompt_manager
 
 logger = logging.getLogger(__name__)
 
@@ -12,21 +13,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL = "gpt-4"
 MAX_HISTORY_LENGTH = config.MAX_HISTORY_LENGTH
 MAX_RESPONSE_LENGTH = config.MAX_MESSAGE_LENGTH
-
-def load_system_prompt() -> str:
-    prompt_path = Path("system_prompt.txt")
-    
-   
-    default_prompt = """Ты - ассистент в групповом чате, отвечай только на русском"""
-    
-    try:
-        with open(prompt_path, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    except Exception as e:
-        print(f"Ошибка загрузки промпта: {e}. Используется дефолтная версия")
-        return default_prompt
-
-SYSTEM_PROMPT = load_system_prompt()
 
 from g4f.Provider import (
     Liaobots,
@@ -43,14 +29,11 @@ chat_contexts: Dict[int, List[dict]] = {}
 
 async def add_to_chat_context(chat_id: int, text: str, role: str = "user"):
     try:
-        # Инициализация контекста с системным промптом
         if chat_id not in chat_contexts:
             chat_contexts[chat_id] = [{
                 "role": "system",
-                "content": SYSTEM_PROMPT
+                "content": prompt_manager.get_prompt(chat_id)  # Используем индивидуальный промпт
             }]
-        
-        # Добавляем новое сообщение
         chat_contexts[chat_id].append({"role": role, "content": text.strip()})
         
         # Обрезаем историю, сохраняя системный промпт
@@ -66,7 +49,7 @@ async def add_to_chat_context(chat_id: int, text: str, role: str = "user"):
         if chat_id in chat_contexts and len(chat_contexts[chat_id]) == 0:
             chat_contexts[chat_id] = [{
                 "role": "system",
-                "content": SYSTEM_PROMPT
+                "content": prompt_manager.get_prompt(chat_id)
             }]
 
 def split_long_message(message: str) -> List[str]:
