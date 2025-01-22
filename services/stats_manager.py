@@ -18,21 +18,24 @@ class StatsManager:
         print("Инициализирован StatsManager")
 
     def _init_storage(self):
-        STATS_DIR.mkdir(parents=True, exist_ok=True)
-        if not STATS_FILE.exists():
-            with open(STATS_FILE, "w", encoding="utf-8") as f:
-                json.dump({}, f)
+        try:
+            STATS_DIR.mkdir(parents=True, exist_ok=True)
+            if not STATS_FILE.exists():
+                with open(STATS_FILE, "w", encoding="utf-8") as f:
+                    json.dump({}, f, indent=2)
+        except Exception as e:
+            logger.error(f"Ошибка инициализации хранилища: {str(e)}")
 
     def _load_stats(self):
         try:
             with open(STATS_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 self.stats = {
-                    (int(chat_id), int(user_id)): count 
-                    for (chat_id, user_id), count in data.items()
+                    (int(key.split(",")[0]), int(key.split(",")[1])): count 
+                    for key, count in data.items()
                 }
         except Exception as e:
-            print(f"Ошибка загрузки: {str(e)}")
+            logger.error(f"Ошибка загрузки: {str(e)}")
             self.stats = {}
 
     def _save_stats(self):

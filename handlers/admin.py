@@ -170,8 +170,8 @@ async def show_stats(message: types.Message):
 
 
 async def clear_history(message: types.Message):
-    user_id = message.from_user.id
-    reset_chat_context(user_id)
+    chat_id = message.chat.id
+    reset_chat_context(chat_id)
     await message.answer("🔄 История диалога успешно очищена!")
 
 async def delete_message(message: types.Message):
