@@ -26,6 +26,7 @@ async def main():
     # Регистрация обработчиков
     dp.message.register(admin.ban_user, Command('ban'), IsAdminFilter())
     dp.message.register(admin.warn_user, Command('warn'), IsAdminFilter())
+    dp.message.register(admin.unwarn_user, Command('unwarn'), IsAdminFilter())
     dp.message.register(admin.delete_message, Command('del'), IsAdminFilter())
     dp.message.register(admin.show_stats, Command('stats'))
     dp.message.register(admin.clear_history, Command('clear'), IsAdminFilter())
