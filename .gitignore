@@ -172,3 +172,4 @@ cython_debug/
 
 system_prompt.txt
 *.md
+stats/
