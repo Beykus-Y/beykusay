@@ -7,8 +7,9 @@ from services.stats_manager import stats_manager
 import logging
 from filters.admin import IsAdminFilter
 from services.prompt_manager import prompt_manager
+from services.context_manager import reset_chat_context
 
-logger = logging.getLogger(__name__)  # Добавьте эту строку
+logger = logging.getLogger(__name__) 
 
 
 async def check_target_is_admin(chat_id: int, user_id: int, bot: Bot) -> bool:
@@ -23,7 +24,6 @@ async def show_warns(message: types.Message):
     chat_id = message.chat.id
     
     if message.reply_to_message:
-        # Показать варны для пользователя из реплая
         user = message.reply_to_message.from_user
         warn_count = warn_manager.get_warns(chat_id, user.id)
         await message.answer(
@@ -194,7 +194,7 @@ async def set_prompt(message: types.Message):
     new_prompt = message.reply_to_message.text
     prompt_manager.set_prompt(message.chat.id, new_prompt)
     await message.answer("✅ Системный промпт для этого чата обновлен!")
-    reset_chat_context(message.chat.id)  # Сбрасываем контекст для применения нового промпта
+    reset_chat_context(message.chat.id)
 
 async def reset_prompt(message: types.Message):
     prompt_manager.reset_prompt(message.chat.id)

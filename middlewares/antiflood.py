@@ -13,7 +13,6 @@ class AntiFloodMiddleware(BaseMiddleware):
         event: Update,
         data: Dict[str, Any]
     ) -> Any:
-        # Проверяем, является ли событие сообщением
         if not isinstance(event, Message):
             return await handler(event, data)
 
