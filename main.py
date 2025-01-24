@@ -6,7 +6,10 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.enums import ContentType
 from aiogram.fsm.storage.memory import MemoryStorage
-
+from services.news_service import news_service
+from handlers.news_setup import router as news_router  
+from states import NewsSetupStates
+from handlers.admin import admin_router
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from config import config
@@ -22,6 +25,10 @@ async def main():
     # Middleware
     dp.update.outer_middleware(StatsMiddleware())
     dp.update.outer_middleware(AntiFloodMiddleware())
+
+    # Route
+    dp.include_router(news_router)
+    dp.include_router(admin_router)
     
     # Регистрация обработчиков
     dp.message.register(admin.ban_user, Command('ban'), IsAdminFilter())
@@ -39,7 +46,15 @@ async def main():
         F.content_type == ContentType.TEXT,
         F.chat.type.in_({"group", "supergroup"})
     )
+
+    asyncio.create_task(news_scheduler(bot))
+
     await dp.start_polling(bot)
+
+async def news_scheduler(bot: Bot):
+    while True:
+        await asyncio.sleep(60)  # Проверка каждую минуту
+        await news_service.process_scheduled_posts(bot)
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)

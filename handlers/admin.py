@@ -3,14 +3,17 @@ from services.ai import reset_chat_context
 from services.warn_manager import warn_manager
 from aiogram.filters import Command
 from aiogram.types import User
+from aiogram import Router
 from services.stats_manager import stats_manager
 import logging
 from filters.admin import IsAdminFilter
 from services.prompt_manager import prompt_manager
 from services.context_manager import reset_chat_context
+from services.news_service import news_service
 
 logger = logging.getLogger(__name__) 
 
+admin_router = Router()
 
 async def check_target_is_admin(chat_id: int, user_id: int, bot: Bot) -> bool:
     try:
@@ -200,3 +203,14 @@ async def reset_prompt(message: types.Message):
     prompt_manager.reset_prompt(message.chat.id)
     await message.answer("✅ Системный промпт сброшен до стандартного!")
     reset_chat_context(message.chat.id)
+
+@admin_router.message(Command('subscribe'),)
+async def subscribe_topic(message: types.Message):
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer("Укажите тему: /subscribe tech")
+        return
+    
+    topic = args[1]
+    news_service.subscriptions[message.chat.id] = {"topics": [topic]}
+    await message.answer(f"✅ Подписка на тему '{topic}' оформлена!")
