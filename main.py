@@ -37,6 +37,7 @@ async def main():
     dp.message.register(admin.unwarn_user, Command('unwarn'), IsAdminFilter())
     dp.message.register(admin.delete_message, Command('del'), IsAdminFilter())
     dp.message.register(admin.show_stats, Command('stats'))
+    dp.message.register(admin.charts_command, Command('charts')),
     dp.message.register(admin.set_prompt, Command('set_prompt'), IsAdminFilter())
     dp.message.register(admin.reset_prompt, Command('reset_prompt'), IsAdminFilter())
     dp.message.register(admin.clear_history, Command('clear'), IsAdminFilter())

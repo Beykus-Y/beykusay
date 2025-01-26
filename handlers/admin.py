@@ -10,6 +10,7 @@ from filters.admin import IsAdminFilter
 from services.prompt_manager import prompt_manager
 from services.context_manager import reset_chat_context
 from services.news_service import news_service
+from services.get_charts import show_charts_handler
 
 logger = logging.getLogger(__name__) 
 
@@ -203,6 +204,10 @@ async def reset_prompt(message: types.Message):
     prompt_manager.reset_prompt(message.chat.id)
     await message.answer("✅ Системный промпт сброшен до стандартного!")
     reset_chat_context(message.chat.id)
+
+@admin_router.message(Command('charts'), IsAdminFilter())
+async def charts_command(message: types.Message):
+    await show_charts_handler(message)
 
 @admin_router.message(Command('subscribe'),)
 async def subscribe_topic(message: types.Message):
