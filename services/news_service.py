@@ -18,7 +18,7 @@ class NewsService:
         self.subscriptions: Dict[int, Dict[str, Any]] = {}
         self.rss_sources = config.RSS_SOURCES
         self.sent_guids = set()
-        self._guids_file = Path("data/sent_guids.json")  # Файл для истории GUID
+        self._guids_file = Path("data/sent_guids.json") 
         self._init_storage()
         self._load_data()
         self._load_sent_guids()

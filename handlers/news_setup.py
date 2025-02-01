@@ -47,7 +47,15 @@ async def process_channel(message: types.Message, state: FSMContext):
         chat = await message.bot.get_chat(f"@{channel_username}")
         admins = await message.bot.get_chat_administrators(chat.id)
         bot_id = (await message.bot.get_me()).id
+        user_id = message.from_user.id
         
+        # Проверка является ли пользователь администратором канала
+        if not any(admin.user.id == user_id for admin in admins):
+            logger.warning(f"Пользователь {user_id} не является администратором канала {channel_username}")
+            await message.answer("❌ Вы должны быть администратором канала для его настройки!")
+            return
+        
+        # Проверка является ли бот администратором канала
         if not any(admin.user.id == bot_id for admin in admins):
             logger.warning(f"Бот не админ в канале {channel_username}")
             await message.answer("❌ Бот не является администратором канала!")
