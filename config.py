@@ -9,6 +9,7 @@ class Config:
     MAX_MESSAGE_LENGTH = int(os.getenv('MAX_MESSAGE_LENGTH', 4000))
     MAX_HISTORY_LENGTH = int(os.getenv('MAX_HISTORY_LENGTH', 6))  # Добавить в .env
     AI_TIMEOUT = int(os.getenv('AI_TIMEOUT', 20))
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY")
     RSS_MAPPING = {
         # ===== Технологии =====
         "технологии": [

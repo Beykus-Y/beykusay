@@ -1,5 +1,6 @@
-from aiogram import types, Bot
+from aiogram import types, Bot, Router, F
 from services.ai import reset_chat_context
+from services.prompt_manager import prompt_manager, AIMode, GeminiModel
 from services.warn_manager import warn_manager
 from aiogram.filters import Command
 from aiogram.types import User
@@ -7,7 +8,6 @@ from aiogram import Router
 from services.stats_manager import stats_manager
 import logging
 from filters.admin import IsAdminFilter
-from services.prompt_manager import prompt_manager
 from services.context_manager import reset_chat_context
 from services.news_service import news_service
 from services.get_charts import show_charts_handler
@@ -219,3 +219,60 @@ async def subscribe_topic(message: types.Message):
     topic = args[1]
     news_service.subscriptions[message.chat.id] = {"topics": [topic]}
     await message.answer(f"✅ Подписка на тему '{topic}' оформлена!")
+
+async def set_ai_command(message: types.Message):
+    """
+    Обработчик команды /set_ai
+    Использование: /set_ai [default/pro]
+    """
+    try:
+        args = message.text.split()
+        if len(args) != 2 or args[1].lower() not in ['default', 'pro']:
+            await message.reply(
+                "❌ Неверный формат команды!\n"
+                "Использование: /set_ai [default/pro]\n"
+                "default - использование g4f\n"
+                "pro - использование Gemini API"
+            )
+            return
+
+        mode = AIMode.DEFAULT if args[1].lower() == 'default' else AIMode.PRO
+        prompt_manager.set_ai_mode(message.chat.id, mode)
+        
+        await message.reply(
+            f"✅ Режим AI успешно изменен на: {mode.value}\n"
+            f"{'Используется g4f' if mode == AIMode.DEFAULT else 'Используется Gemini API'}"
+        )
+
+    except Exception as e:
+        logger.error(f"Ошибка при установке режима AI: {str(e)}")
+        await message.reply("❌ Произошла ошибка при установке режима AI")
+
+async def set_gemini_model_command(message: types.Message):
+    """
+    Обработчик команды /set_model
+    Использование: /set_model [flash/flash_lite/pro_exp/flash_thinking/flash_8b]
+    """
+    try:
+        args = message.text.split()
+        if len(args) != 2:
+            models_list = "\n".join([f"- {model.name.lower()}: {model.value}" for model in GeminiModel])
+            await message.reply(
+                "❌ Неверный формат команды!\n"
+                "Использование: /set_model [модель]\n"
+                "Доступные модели:\n"
+                f"{models_list}"
+            )
+            return
+
+        model_name = args[1].upper()
+        try:
+            model = GeminiModel[model_name]
+            prompt_manager.set_gemini_model(message.chat.id, model)
+            await message.reply(f"✅ Модель Gemini успешно изменена на: {model.value}")
+        except KeyError:
+            await message.reply("❌ Указанная модель не найдена!")
+
+    except Exception as e:
+        logger.error(f"Ошибка при установке модели Gemini: {str(e)}")
+        await message.reply("❌ Произошла ошибка при установке модели")

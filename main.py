@@ -24,7 +24,7 @@ async def main():
     
     # Middleware
     dp.update.outer_middleware(StatsMiddleware())
-    dp.update.outer_middleware(AntiFloodMiddleware())
+    dp.update.outer_middleware(AntiFloodMiddleware(limit=5))
 
     # Route
     dp.include_router(news_router)
@@ -42,6 +42,8 @@ async def main():
     dp.message.register(admin.reset_prompt, Command('reset_prompt'), IsAdminFilter())
     dp.message.register(admin.clear_history, Command('clear'), IsAdminFilter())
     dp.message.register(admin.show_warns, Command('warns'), IsAdminFilter())
+    dp.message.register(admin.set_ai_command, Command('set_ai'), IsAdminFilter())
+    dp.message.register(admin.set_gemini_model_command, Command('set_model'), IsAdminFilter())
     dp.message.register(
         common.handle_message,
         F.content_type == ContentType.TEXT,
