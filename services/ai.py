@@ -1,7 +1,7 @@
 import logging
 import g4f
 import html
-from typing import Dict, List
+from typing import Dict, List, Union
 from config import config
 import os
 from pathlib import Path
@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL = "gpt-4"
 MAX_HISTORY_LENGTH = config.MAX_HISTORY_LENGTH
 MAX_RESPONSE_LENGTH = config.MAX_MESSAGE_LENGTH
+MAX_TELEGRAM_MESSAGE_LENGTH = 2000  # Максимальная длина сообщения в Telegram
 
 from g4f.Provider import (
     Liaobots,
@@ -55,63 +56,121 @@ async def add_to_chat_context(chat_id: int, text: str, role: str = "user"):
             combined_prompt = prompt_manager.get_combined_prompt(chat_id)
             chat_contexts[chat_id] = [{"role": "system", "content": combined_prompt}]
 
-def split_long_message(message: str) -> List[str]:
-    return [message[i:i+MAX_RESPONSE_LENGTH] for i in range(0, len(message), MAX_RESPONSE_LENGTH)]
+def split_long_message(message: str, max_length: int = MAX_TELEGRAM_MESSAGE_LENGTH) -> List[str]:
+    """
+    Разбивает длинное сообщение на части с заданной максимальной длиной.
+    Пытается делать разбивку по переносам строк или пробелам для более
+    естественного деления текста.
+    """
+    if len(message) <= max_length:
+        return [message]
+    
+    parts = []
+    current_position = 0
+    
+    while current_position < len(message):
+        if current_position + max_length >= len(message):
+            # Если это последняя часть сообщения
+            parts.append(message[current_position:])
+            break
+        
+        # Ищем удобное место для разделения (перенос строки или пробел)
+        cut_position = current_position + max_length
+        
+        # Сначала пробуем найти перенос строки
+        newline_position = message.rfind('\n', current_position, cut_position)
+        
+        if newline_position > current_position + max_length // 2:
+            # Если перенос строки найден и не слишком близко к началу части
+            cut_position = newline_position + 1  # +1 чтобы включить перенос строки
+        else:
+            # Иначе ищем пробел
+            space_position = message.rfind(' ', current_position, cut_position)
+            
+            if space_position > current_position + max_length // 2:
+                # Если пробел найден и не слишком близко к началу части
+                cut_position = space_position + 1  # +1 чтобы включить пробел
+        
+        parts.append(message[current_position:cut_position])
+        current_position = cut_position
+    
+    return parts
 
-async def get_ai_response(chat_id: int, text: str) -> str:
+async def get_ai_response(chat_id: int, text: str) -> Union[str, List[str]]:
     try:
         await add_to_chat_context(chat_id, text)
         context = chat_contexts.get(chat_id, [])
         
         settings = prompt_manager.get_settings(chat_id)
         
-        if settings.ai_mode == AIMode.PRO:
-            try:
-                model_type = settings.gemini_model or GeminiModel.FLASH_8B
-                gemini_model = genai.GenerativeModel(model_type.value)
-                
-                chat_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in context])
-                response = await gemini_model.generate_content_async(
-                    chat_text,
-                    generation_config={
-                        'temperature': 0.9,
-                        'top_p': 0.8,
-                    }
+        try:
+            if settings.ai_mode == AIMode.PRO:
+                try:
+                    model_type = settings.gemini_model or GeminiModel.FLASH_8B
+                    gemini_model = genai.GenerativeModel(model_type.value)
+                    
+                    chat_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in context])
+                    response = await gemini_model.generate_content_async(
+                        chat_text,
+                        generation_config={
+                            'temperature': 0.9,
+                            'top_p': 0.8,
+                        }
+                    )
+                    response_text = response.text.strip()
+                    
+                    # Sanitize the response for Telegram
+                    response_text = sanitize_for_telegram(response_text)
+                    
+                except Exception as gemini_error:
+                    logger.error(f"Ошибка Gemini API: {str(gemini_error)}")
+                    prompt_manager.set_ai_mode(chat_id, AIMode.DEFAULT)
+                    return "⚠️ Произошла ошибка с Gemini API. Автоматически переключаюсь на стандартный режим."
+            else:
+                response = await g4f.ChatCompletion.create_async(
+                    model=DEFAULT_MODEL,
+                    messages=context[-MAX_HISTORY_LENGTH:],
+                    safe_mode=False,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                                    "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+                    },
+                    timeout=config.AI_TIMEOUT,
+                    temperature=1.0,
+                    top_p=0.99,
                 )
-                response_text = response.text.strip()
-                
-                # Sanitize the response for Telegram
-                response_text = sanitize_for_telegram(response_text)
-                
-            except Exception as gemini_error:
-                logger.error(f"Ошибка Gemini API: {str(gemini_error)}")
-                prompt_manager.set_ai_mode(chat_id, AIMode.DEFAULT)
-                return "⚠️ Произошла ошибка с Gemini API. Автоматически переключаюсь на стандартный режим."
-        else:
-            response = await g4f.ChatCompletion.create_async(
-                model=DEFAULT_MODEL,
-                messages=context[-MAX_HISTORY_LENGTH:],
-                safe_mode=False,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                                "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-                },
-                timeout=config.AI_TIMEOUT,
-                temperature=1.0,
-                top_p=0.99,
-            )
-            response_text = response if isinstance(response, str) else "Не удалось обработать ответ нейросети"
-            response_text = response_text.strip()
+                response_text = response if isinstance(response, str) else "Не удалось обработать ответ нейросети"
+                response_text = response_text.strip()
 
-        response_text = html.unescape(response_text)
-        response_text = response_text.replace('\u200b', '')
-        response_text = response_text.replace('\ufeff', '')
-        
-        # Make sure response conforms to Telegram's entity restrictions
-        response_text = sanitize_for_telegram(response_text)
-        
-        await add_to_chat_context(chat_id, response_text, "assistant")
-        return response_text
+            response_text = html.unescape(response_text)
+            response_text = response_text.replace('\u200b', '')
+            response_text = response_text.replace('\ufeff', '')
+            
+            # Make sure response conforms to Telegram's entity restrictions
+            response_text = sanitize_for_telegram(response_text)
+            
+            # Сохраняем полный ответ в контексте
+            await add_to_chat_context(chat_id, response_text, "assistant")
+            
+            # Проверка типа и преобразование для безопасности
+            if not isinstance(response_text, str):
+                response_text = str(response_text)
+            
+            # Разбиваем ответ на части для отправки в Telegram
+            message_parts = split_long_message(response_text, MAX_TELEGRAM_MESSAGE_LENGTH)
+            
+            # Проверяем, что все элементы списка - строки
+            message_parts = [str(part) for part in message_parts]
+            
+            # Если сообщение всего одно, возвращаем строку, иначе список строк
+            if len(message_parts) == 1:
+                return message_parts[0]
+            else:
+                return message_parts
+                
+        except Exception as inner_e:
+            logger.error(f"Внутренняя ошибка генерации: {str(inner_e)}", exc_info=True)
+            return "⚠️ Произошла ошибка при обработке ответа. Попробуйте еще раз."
 
     except Exception as e:
         logger.error(f"Ошибка генерации: {str(e)}", exc_info=True)
@@ -151,8 +210,5 @@ def sanitize_for_telegram(text: str) -> str:
         if text.count(tag) > text.count(closing_tag):
             text += closing_tag
     
-    # Ensure the text doesn't exceed Telegram's message length limit
-    if len(text) > MAX_RESPONSE_LENGTH:
-        text = text[:MAX_RESPONSE_LENGTH - 3] + '...'
-    
+    # Возвращаем текст без ограничения длины, так как разбивка будет выполнена в split_long_message
     return text
