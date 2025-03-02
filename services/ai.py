@@ -57,15 +57,14 @@ async def add_to_chat_context(chat_id: int, text: str, role: str = "user"):
             combined_prompt = prompt_manager.get_combined_prompt(chat_id)
             chat_contexts[chat_id] = [{"role": "system", "content": combined_prompt}]
 
-def split_long_message(message: str, max_length: int = MAX_TELEGRAM_MESSAGE_LENGTH) -> List[str]:
+def split_long_message(message: str, max_length: int = 4048) -> List[str]:
     """
     Разбивает длинное сообщение на части с учетом Markdown-разметки Telegram.
-    Сохраняет целостность форматирования (жирный, курсив, код) и разбивает текст
-    по абзацам, предложениям или словам, если необходимо.
+    Оптимизировано для снижения потребления памяти и CPU.
 
     Args:
         message (str): Исходный текст с возможной Markdown-разметкой.
-        max_length (int): Максимальная длина одной части (по умолчанию 2000 символов).
+        max_length (int): Максимальная длина одной части (по умолчанию 4048 символов).
 
     Returns:
         List[str]: Список частей сообщения, готовых для отправки в Telegram.
@@ -76,63 +75,46 @@ def split_long_message(message: str, max_length: int = MAX_TELEGRAM_MESSAGE_LENG
     parts = []
     current_pos = 0
 
-    # Регулярные выражения для поиска Markdown-форматирования Telegram
-    md_patterns = {
-        'bold': r'\*(.*?)\*',           # *текст*
-        'italic': r'_(.*?)_',           # _текст_
-        'code': r'`([^`]+)`',           # `код`
-        'pre': r'```(.*?)```',          # ```код```
-        'link': r'\[(.*?)\]\((.*?)\)'   # [текст](url)
-    }
-
-    # Находим все форматированные блоки
-    formatted_blocks = []
-    for pattern_type, pattern in md_patterns.items():
-        for match in re.finditer(pattern, message, re.DOTALL):
-            formatted_blocks.append({
-                'start': match.start(),
-                'end': match.end(),
-            })
-    formatted_blocks.sort(key=lambda x: x['start'])
+    # Единое регулярное выражение для всех типов Markdown
+    md_pattern = r'(\*[^*]+\*|_[^_]+_|\`[^`]+\`|```[^`]+```|$$ .*? $$$$ .*? $$)'
+    formatted_blocks = [(m.start(), m.end()) for m in re.finditer(md_pattern, message)]
 
     while current_pos < len(message):
         if len(message) - current_pos <= max_length:
             parts.append(message[current_pos:])
             break
 
-        # Предполагаемая точка среза
         cut_pos = current_pos + max_length
-
-        # Проверяем, не пересекаем ли форматированный блок
         safe_cut_pos = cut_pos
-        for block in formatted_blocks:
-            if current_pos <= block['start'] < cut_pos < block['end']:
-                # Разрез внутри блока — сдвигаем точку среза до начала блока
-                safe_cut_pos = min(safe_cut_pos, block['start'])
+
+        # Проверяем только ближайшие блоки
+        for start, end in formatted_blocks:
+            if start < current_pos:  # Пропускаем уже пройденные блоки
+                continue
+            if current_pos <= start < cut_pos < end:
+                safe_cut_pos = start
+                break
+            if start >= cut_pos:  # Блоки дальше среза не проверяем
                 break
 
-        # Если форматирование не нарушено, ищем естественную точку разрыва
+        # Если форматирование не нарушено, ищем естественный разрыв
         if safe_cut_pos == cut_pos:
-            # Ищем перенос строки
             newline_pos = message.rfind('\n', current_pos, cut_pos)
             if newline_pos > current_pos + max_length // 2:
                 safe_cut_pos = newline_pos + 1
             else:
-                # Ищем точку конца предложения
                 sentence_pos = message.rfind('. ', current_pos, cut_pos)
                 if sentence_pos > current_pos + max_length // 2:
                     safe_cut_pos = sentence_pos + 2
                 else:
-                    # Ищем последний пробел
                     space_pos = message.rfind(' ', current_pos, cut_pos)
                     if space_pos > current_pos + max_length // 2:
                         safe_cut_pos = space_pos + 1
 
-        # Если безопасная точка не найдена, используем максимальную длину
+        # Если безопасная точка не найдена, режем по максимуму
         if safe_cut_pos == cut_pos:
             safe_cut_pos = cut_pos
 
-        # Добавляем часть текста
         parts.append(message[current_pos:safe_cut_pos])
         current_pos = safe_cut_pos
 
