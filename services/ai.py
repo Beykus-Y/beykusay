@@ -4,6 +4,7 @@ import html
 from typing import Dict, List, Union
 from config import config
 import os
+import re
 from pathlib import Path
 from services.prompt_manager import prompt_manager, AIMode, GeminiModel
 from services.context_manager import chat_contexts, reset_chat_context
@@ -58,42 +59,83 @@ async def add_to_chat_context(chat_id: int, text: str, role: str = "user"):
 
 def split_long_message(message: str, max_length: int = MAX_TELEGRAM_MESSAGE_LENGTH) -> List[str]:
     """
-    Разбивает длинное сообщение на части с заданной максимальной длиной.
-    Пытается делать разбивку по переносам строк или пробелам для более
-    естественного деления текста.
+    Разбивает длинное сообщение на части с учетом Markdown-разметки Telegram.
+    Сохраняет целостность форматирования (жирный, курсив, код) и разбивает текст
+    по абзацам, предложениям или словам, если необходимо.
+
+    Args:
+        message (str): Исходный текст с возможной Markdown-разметкой.
+        max_length (int): Максимальная длина одной части (по умолчанию 2000 символов).
+
+    Returns:
+        List[str]: Список частей сообщения, готовых для отправки в Telegram.
     """
     if len(message) <= max_length:
         return [message]
-    
+
     parts = []
-    current_position = 0
-    
-    while current_position < len(message):
-        if current_position + max_length >= len(message):
-            # Если это последняя часть сообщения
-            parts.append(message[current_position:])
+    current_pos = 0
+
+    # Регулярные выражения для поиска Markdown-форматирования Telegram
+    md_patterns = {
+        'bold': r'\*(.*?)\*',           # *текст*
+        'italic': r'_(.*?)_',           # _текст_
+        'code': r'`([^`]+)`',           # `код`
+        'pre': r'```(.*?)```',          # ```код```
+        'link': r'\[(.*?)\]\((.*?)\)'   # [текст](url)
+    }
+
+    # Находим все форматированные блоки
+    formatted_blocks = []
+    for pattern_type, pattern in md_patterns.items():
+        for match in re.finditer(pattern, message, re.DOTALL):
+            formatted_blocks.append({
+                'start': match.start(),
+                'end': match.end(),
+            })
+    formatted_blocks.sort(key=lambda x: x['start'])
+
+    while current_pos < len(message):
+        if len(message) - current_pos <= max_length:
+            parts.append(message[current_pos:])
             break
-        
-        # Ищем удобное место для разделения (перенос строки или пробел)
-        cut_position = current_position + max_length
-        
-        # Сначала пробуем найти перенос строки
-        newline_position = message.rfind('\n', current_position, cut_position)
-        
-        if newline_position > current_position + max_length // 2:
-            # Если перенос строки найден и не слишком близко к началу части
-            cut_position = newline_position + 1  # +1 чтобы включить перенос строки
-        else:
-            # Иначе ищем пробел
-            space_position = message.rfind(' ', current_position, cut_position)
-            
-            if space_position > current_position + max_length // 2:
-                # Если пробел найден и не слишком близко к началу части
-                cut_position = space_position + 1  # +1 чтобы включить пробел
-        
-        parts.append(message[current_position:cut_position])
-        current_position = cut_position
-    
+
+        # Предполагаемая точка среза
+        cut_pos = current_pos + max_length
+
+        # Проверяем, не пересекаем ли форматированный блок
+        safe_cut_pos = cut_pos
+        for block in formatted_blocks:
+            if current_pos <= block['start'] < cut_pos < block['end']:
+                # Разрез внутри блока — сдвигаем точку среза до начала блока
+                safe_cut_pos = min(safe_cut_pos, block['start'])
+                break
+
+        # Если форматирование не нарушено, ищем естественную точку разрыва
+        if safe_cut_pos == cut_pos:
+            # Ищем перенос строки
+            newline_pos = message.rfind('\n', current_pos, cut_pos)
+            if newline_pos > current_pos + max_length // 2:
+                safe_cut_pos = newline_pos + 1
+            else:
+                # Ищем точку конца предложения
+                sentence_pos = message.rfind('. ', current_pos, cut_pos)
+                if sentence_pos > current_pos + max_length // 2:
+                    safe_cut_pos = sentence_pos + 2
+                else:
+                    # Ищем последний пробел
+                    space_pos = message.rfind(' ', current_pos, cut_pos)
+                    if space_pos > current_pos + max_length // 2:
+                        safe_cut_pos = space_pos + 1
+
+        # Если безопасная точка не найдена, используем максимальную длину
+        if safe_cut_pos == cut_pos:
+            safe_cut_pos = cut_pos
+
+        # Добавляем часть текста
+        parts.append(message[current_pos:safe_cut_pos])
+        current_pos = safe_cut_pos
+
     return parts
 
 async def get_ai_response(chat_id: int, text: str) -> Union[str, List[str]]:
