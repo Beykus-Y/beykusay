@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL = "gpt-4"
 MAX_HISTORY_LENGTH = config.MAX_HISTORY_LENGTH
 MAX_RESPONSE_LENGTH = config.MAX_MESSAGE_LENGTH
-MAX_TELEGRAM_MESSAGE_LENGTH = 2000  # Максимальная длина сообщения в Telegram
+MAX_TELEGRAM_MESSAGE_LENGTH = config.MAX_MESSAGE_LENGTH  # Максимальная длина сообщения в Telegram
 
 from g4f.Provider import (
     Liaobots,
@@ -57,10 +57,12 @@ async def add_to_chat_context(chat_id: int, text: str, role: str = "user"):
             combined_prompt = prompt_manager.get_combined_prompt(chat_id)
             chat_contexts[chat_id] = [{"role": "system", "content": combined_prompt}]
 
+from typing import List
+
 def split_long_message(message: str, max_length: int = 4048) -> List[str]:
     """
-    Разбивает длинное сообщение на части с учетом Markdown-разметки Telegram.
-    Оптимизировано для снижения потребления памяти и CPU.
+    Разбивает длинное сообщение на части с минимальным потреблением ресурсов.
+    Работает потоково, избегая разрезания Markdown-разметки на основе анализа символов.
 
     Args:
         message (str): Исходный текст с возможной Markdown-разметкой.
@@ -74,49 +76,48 @@ def split_long_message(message: str, max_length: int = 4048) -> List[str]:
 
     parts = []
     current_pos = 0
+    buffer = ""  # Буфер для накопления текста
 
-    # Единое регулярное выражение для всех типов Markdown
-    md_pattern = r'(\*[^*]+\*|_[^_]+_|\`[^`]+\`|```[^`]+```|$$ .*? $$$$ .*? $$)'
-    formatted_blocks = [(m.start(), m.end()) for m in re.finditer(md_pattern, message)]
+    # Маркеры Markdown и их пары
+    markers = {
+        '*': '*',  # Жирный
+        '_': '_',  # Курсив
+        '`': '`',  # Код
+        '```': '```'  # Блок кода
+    }
+    open_markers = []  # Стек открытых маркеров
 
-    while current_pos < len(message):
-        if len(message) - current_pos <= max_length:
-            parts.append(message[current_pos:])
-            break
+    for i, char in enumerate(message):
+        buffer += char
 
-        cut_pos = current_pos + max_length
-        safe_cut_pos = cut_pos
+        # Проверка Markdown-маркеров
+        if char in markers:
+            if not open_markers or open_markers[-1] != char:
+                open_markers.append(char)  # Открываем новый маркер
+            elif open_markers[-1] == char:
+                open_markers.pop()  # Закрываем парный маркер
 
-        # Проверяем только ближайшие блоки
-        for start, end in formatted_blocks:
-            if start < current_pos:  # Пропускаем уже пройденные блоки
-                continue
-            if current_pos <= start < cut_pos < end:
-                safe_cut_pos = start
-                break
-            if start >= cut_pos:  # Блоки дальше среза не проверяем
-                break
+        # Проверка длины буфера
+        if len(buffer) >= max_length:
+            # Ищем безопасную точку разрыва
+            safe_cut = len(buffer)
+            if not open_markers:  # Нет открытых маркеров, можно резать
+                for delimiter in ('\n', '. ', ' '):
+                    pos = buffer.rfind(delimiter)
+                    if pos > max_length // 2:
+                        safe_cut = pos + (1 if delimiter == '\n' else 2 if delimiter == '. ' else 1)
+                        break
+            else:  # Есть открытые маркеры, ищем ближайший безопасный разрыв назад
+                safe_cut = buffer.rfind(' ', 0, max_length // 2) + 1 if buffer.rfind(' ', 0, max_length // 2) != -1 else safe_cut
 
-        # Если форматирование не нарушено, ищем естественный разрыв
-        if safe_cut_pos == cut_pos:
-            newline_pos = message.rfind('\n', current_pos, cut_pos)
-            if newline_pos > current_pos + max_length // 2:
-                safe_cut_pos = newline_pos + 1
-            else:
-                sentence_pos = message.rfind('. ', current_pos, cut_pos)
-                if sentence_pos > current_pos + max_length // 2:
-                    safe_cut_pos = sentence_pos + 2
-                else:
-                    space_pos = message.rfind(' ', current_pos, cut_pos)
-                    if space_pos > current_pos + max_length // 2:
-                        safe_cut_pos = space_pos + 1
+            # Добавляем часть в результат
+            parts.append(buffer[:safe_cut])
+            buffer = buffer[safe_cut:]
+            current_pos = i + 1 - len(buffer)
 
-        # Если безопасная точка не найдена, режем по максимуму
-        if safe_cut_pos == cut_pos:
-            safe_cut_pos = cut_pos
-
-        parts.append(message[current_pos:safe_cut_pos])
-        current_pos = safe_cut_pos
+    # Добавляем оставшийся буфер
+    if buffer:
+        parts.append(buffer)
 
     return parts
 
